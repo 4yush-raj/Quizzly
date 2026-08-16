@@ -19,5 +19,8 @@
     "express": "^4.18.3",
     "jsonwebtoken": "^9.0.2",
     "prisma": "^5.10.2"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.13.0"
   }
 }
