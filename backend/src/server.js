@@ -37,10 +37,15 @@ app.use((req, res) => {
   res.status(404).json({ error: 'API Endpoint not found.' });
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`====================================================`);
-  console.log(`🚀 Quizzly Express Server running on port ${PORT}`);
-  console.log(`👉 Health Check: http://localhost:${PORT}/api/health`);
-  console.log(`====================================================`);
-});
+// Start Server (local environment)
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`====================================================`);
+    console.log(`🚀 Quizzly Express Server running on port ${PORT}`);
+    console.log(`👉 Health Check: http://localhost:${PORT}/api/health`);
+    console.log(`====================================================`);
+  });
+}
+
+module.exports = app;
+
