@@ -6,8 +6,7 @@
     "backend"
   ],
   "scripts": {
-    "build": "npm run build --prefix frontend && node ./backend/node_modules/prisma/build/index.js generate --schema=backend/prisma/schema.prisma",
-    "postinstall": "chmod +x ./node_modules/.bin/* || true"
+    "build": "npm run build --prefix frontend && npm run build --prefix backend"
   },
   "dependencies": {
     "@prisma/client": "^5.10.2",
