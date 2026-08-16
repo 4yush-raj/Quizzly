@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int           @id @default(autoincrement())
+  name      String
+  email     String        @unique
+  password  String
+  role      String        @default("STUDENT") // "ADMIN" | "STUDENT"
+  status    String        @default("ACTIVE")  // "ACTIVE" | "DEACTIVATED"
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  attempts  QuizAttempt[]
+}
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  quizzes     Quiz[]
+}
+
+model Quiz {
+  id                Int           @id @default(autoincrement())
+  title             String
+  description       String
+  categoryId        Int
+  category          Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  difficulty        String        @default("INTERMEDIATE") // "EASY" | "INTERMEDIATE" | "HARD"
+  durationMinutes   Int           @default(20)
+  passingPercentage Float         @default(60.0)
+  maxAttempts       Int           @default(3)
+  status            String        @default("DRAFT") // "DRAFT" | "PUBLISHED" | "UNPUBLISHED"
+  thumbnailUrl      String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  questions         Question[]
+  attempts          QuizAttempt[]
+}
+
+model Question {
+  id            Int      @id @default(autoincrement())
+  quizId        Int
+  quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  questionText  String
+  options       String   // JSON string array e.g. ["Option A", "Option B"]
+  correctAnswer String
+  explanation   String?
+  marks         Int      @default(1)
+  difficulty    String   @default("INTERMEDIATE")
+  createdAt     DateTime @default(now())
+}
+
+model QuizAttempt {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quizId           Int
+  quiz             Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  score            Float
+  obtainedMarks    Float
+  totalMarks       Float
+  totalQuestions   Int
+  correctAnswers   Int
+  incorrectAnswers Int
+  unanswered       Int
+  timeTakenSeconds Int
+  status           String   // "PASSED" | "FAILED"
+  answers          String   // JSON string of user submitted choices: [{ questionId, selectedAnswer, isCorrect }]
+  startedAt        DateTime @default(now())
+  completedAt      DateTime @default(now())
+}
