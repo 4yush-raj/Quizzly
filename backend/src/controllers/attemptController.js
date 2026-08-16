@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const prisma = require('../config/db');
 const { store, nextId } = require('../store/memoryStore');
 
@@ -5,6 +6,7 @@ const { store, nextId } = require('../store/memoryStore');
 const submitAttempt = async (req, res) => {
   try {
     const userId = req.user.id;
+    const userEmail = req.user.email;
     const { quizId, userAnswers, timeTakenSeconds } = req.body;
 
     if (!quizId || !Array.isArray(userAnswers)) {
@@ -24,7 +26,7 @@ const submitAttempt = async (req, res) => {
           questions = await prisma.question.findMany({ where: { quizId: quizIdInt } });
         }
       } catch (e) {
-        // Fallback
+        console.error('Prisma Fetch Quiz/Questions Error:', e);
       }
     }
 
@@ -78,8 +80,6 @@ const submitAttempt = async (req, res) => {
     const elapsedSeconds = parseInt(timeTakenSeconds, 10) || 0;
 
     const attemptData = {
-      userId,
-      quizId: quizIdInt,
       score: percentage,
       obtainedMarks,
       totalMarks,
@@ -97,10 +97,31 @@ const submitAttempt = async (req, res) => {
 
     if (prisma) {
       try {
+        // Resolve database user ID dynamically by email to avoid Foreign Key constraint error
+        let dbUserId = userId;
+        if (userEmail) {
+          const dbUser = await prisma.user.findUnique({ where: { email: userEmail.toLowerCase() } });
+          if (dbUser) {
+            dbUserId = dbUser.id;
+          } else {
+            const hashedPassword = await bcrypt.hash('defaultStudentPass123', 10);
+            const createdUser = await prisma.user.create({
+              data: {
+                name: req.user.name || 'Student',
+                email: userEmail.toLowerCase(),
+                password: hashedPassword,
+                role: req.user.role || 'STUDENT',
+                status: 'ACTIVE'
+              }
+            });
+            dbUserId = createdUser.id;
+          }
+        }
+
         createdAttempt = await prisma.quizAttempt.create({
           data: {
-            userId: attemptData.userId,
-            quizId: attemptData.quizId,
+            userId: dbUserId,
+            quizId: quizIdInt,
             score: attemptData.score,
             obtainedMarks: attemptData.obtainedMarks,
             totalMarks: attemptData.totalMarks,
@@ -114,13 +135,15 @@ const submitAttempt = async (req, res) => {
           }
         });
       } catch (e) {
-        // Fallback
+        console.error('Prisma QuizAttempt Create Error:', e);
       }
     }
 
     if (!createdAttempt) {
       createdAttempt = {
         id: nextId.attempts++,
+        userId,
+        quizId: quizIdInt,
         ...attemptData,
         startedAt: new Date(Date.now() - elapsedSeconds * 1000).toISOString()
       };
@@ -156,15 +179,24 @@ const submitAttempt = async (req, res) => {
 const getUserAttempts = async (req, res) => {
   try {
     const userId = req.user.id;
+    const userEmail = req.user.email;
     const role = req.user.role;
     const targetUserId = req.query.userId ? parseInt(req.query.userId, 10) : null;
 
     let attempts = [];
 
-    const queryUserId = role === 'ADMIN' && targetUserId ? targetUserId : userId;
-
     if (prisma) {
       try {
+        let dbUserId = userId;
+        if (userEmail) {
+          const dbUser = await prisma.user.findUnique({ where: { email: userEmail.toLowerCase() } });
+          if (dbUser) {
+            dbUserId = dbUser.id;
+          }
+        }
+
+        const queryUserId = role === 'ADMIN' && targetUserId ? targetUserId : dbUserId;
+
         const raw = await prisma.quizAttempt.findMany({
           where: role === 'ADMIN' && !targetUserId ? {} : { userId: queryUserId },
           include: {
@@ -174,30 +206,32 @@ const getUserAttempts = async (req, res) => {
           orderBy: { completedAt: 'desc' }
         });
 
-        attempts = raw.map((att) => ({
-          id: att.id,
-          quizId: att.quizId,
-          quizTitle: att.quiz.title,
-          categoryName: att.quiz.category ? att.quiz.category.name : 'General',
-          studentName: att.user.name,
-          studentEmail: att.user.email,
-          score: att.score,
-          status: att.status,
-          correctAnswers: att.correctAnswers,
-          totalQuestions: att.totalQuestions,
-          timeTakenSeconds: att.timeTakenSeconds,
-          completedAt: att.completedAt
-        }));
-
-        return res.json(attempts);
+        if (raw) {
+          attempts = raw.map((att) => ({
+            id: att.id,
+            quizId: att.quizId,
+            quizTitle: att.quiz ? att.quiz.title : 'Quiz',
+            categoryName: att.quiz && att.quiz.category ? att.quiz.category.name : 'General',
+            studentName: att.user ? att.user.name : 'Student',
+            studentEmail: att.user ? att.user.email : '',
+            score: att.score,
+            status: att.status,
+            correctAnswers: att.correctAnswers,
+            totalQuestions: att.totalQuestions,
+            timeTakenSeconds: att.timeTakenSeconds,
+            completedAt: att.completedAt
+          }));
+          return res.json(attempts);
+        }
       } catch (e) {
-        // Fallback
+        console.error('Prisma getUserAttempts Error:', e);
       }
     }
 
     // Memory Store Fallback
     let raw = [...store.attempts];
 
+    const queryUserId = role === 'ADMIN' && targetUserId ? targetUserId : userId;
     if (role !== 'ADMIN' || targetUserId) {
       raw = raw.filter((att) => att.userId === queryUserId);
     }
@@ -226,6 +260,7 @@ const getUserAttempts = async (req, res) => {
     attempts.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
     res.json(attempts);
   } catch (error) {
+    console.error('getUserAttempts Error:', error);
     res.status(500).json({ error: 'Failed to fetch attempts.' });
   }
 };
@@ -235,9 +270,8 @@ const getAttemptById = async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const userId = req.user.id;
+    const userEmail = req.user.email;
     const role = req.user.role;
-
-    let attempt = null;
 
     if (prisma) {
       try {
@@ -249,11 +283,11 @@ const getAttemptById = async (req, res) => {
           }
         });
 
-        if (att && (role === 'ADMIN' || att.userId === userId)) {
+        if (att && (role === 'ADMIN' || att.userId === userId || (att.user && att.user.email.toLowerCase() === (userEmail || '').toLowerCase()))) {
           return res.json({
             id: att.id,
-            quizTitle: att.quiz.title,
-            studentName: att.user.name,
+            quizTitle: att.quiz ? att.quiz.title : 'Quiz',
+            studentName: att.user ? att.user.name : 'Student',
             score: att.score,
             obtainedMarks: att.obtainedMarks,
             totalMarks: att.totalMarks,
@@ -263,13 +297,13 @@ const getAttemptById = async (req, res) => {
             unanswered: att.unanswered,
             timeTakenSeconds: att.timeTakenSeconds,
             status: att.status,
-            passingPercentage: att.quiz.passingPercentage,
+            passingPercentage: att.quiz ? att.quiz.passingPercentage : 60,
             completedAt: att.completedAt,
             detailedAnswers: typeof att.answers === 'string' ? JSON.parse(att.answers) : att.answers
           });
         }
       } catch (e) {
-        // Fallback
+        console.error('Prisma getAttemptById Error:', e);
       }
     }
 
@@ -304,6 +338,7 @@ const getAttemptById = async (req, res) => {
       detailedAnswers: typeof att.answers === 'string' ? JSON.parse(att.answers) : att.answers
     });
   } catch (error) {
+    console.error('getAttemptById Error:', error);
     res.status(500).json({ error: 'Failed to fetch attempt result.' });
   }
 };

@@ -31,7 +31,7 @@ const register = async (req, res) => {
       try {
         existingUser = await prisma.user.findUnique({ where: { email: emailLower } });
       } catch (e) {
-        // Fallback to memory store if DB query fails
+        console.error('Prisma findUnique check error:', e);
       }
     }
 
@@ -40,13 +40,12 @@ const register = async (req, res) => {
     }
 
     if (existingUser) {
-      return res.status(400).json({ error: 'An account with this email already exists.' });
+      return res.status(400).json({ error: 'An account with this email already exists. Please log in.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    let newUser;
-    let createdInDb = false;
+    let newUser = null;
 
     if (prisma) {
       try {
@@ -59,13 +58,12 @@ const register = async (req, res) => {
             status: 'ACTIVE'
           }
         });
-        createdInDb = true;
       } catch (e) {
-        console.warn('Prisma creation fallback to memory store');
+        console.error('Prisma User Create Error:', e);
       }
     }
 
-    if (!createdInDb) {
+    if (!newUser) {
       newUser = {
         id: nextId.users++,
         name,
@@ -113,7 +111,7 @@ const login = async (req, res) => {
       try {
         user = await prisma.user.findUnique({ where: { email: emailLower } });
       } catch (e) {
-        // fallback
+        console.error('Prisma login error:', e);
       }
     }
 
@@ -157,18 +155,24 @@ const login = async (req, res) => {
 const getMe = async (req, res) => {
   try {
     const userId = req.user.id;
+    const userEmail = req.user.email;
     let user = null;
 
     if (prisma) {
       try {
-        user = await prisma.user.findUnique({ where: { id: userId } });
+        if (userId) {
+          user = await prisma.user.findUnique({ where: { id: userId } });
+        }
+        if (!user && userEmail) {
+          user = await prisma.user.findUnique({ where: { email: userEmail.toLowerCase() } });
+        }
       } catch (e) {
-        // fallback
+        console.error('Prisma getMe Error:', e);
       }
     }
 
     if (!user) {
-      user = store.users.find((u) => u.id === userId);
+      user = store.users.find((u) => u.id === userId || (userEmail && u.email.toLowerCase() === userEmail.toLowerCase()));
     }
 
     if (!user) {
@@ -211,7 +215,7 @@ const resetPassword = async (req, res) => {
         });
         updated = true;
       } catch (e) {
-        // fallback
+        console.error('Prisma resetPassword Error:', e);
       }
     }
 
