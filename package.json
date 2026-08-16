@@ -1,8 +1,12 @@
 {
   "name": "quizzly-monorepo",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
-    "build": "cd frontend && npm install && node ./node_modules/vite/bin/vite.js build && cd ../backend && npm install && npx prisma generate"
+    "build": "npm run build --prefix frontend && prisma generate --schema=backend/prisma/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^5.10.2",
