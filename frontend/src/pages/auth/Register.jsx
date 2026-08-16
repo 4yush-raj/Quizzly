@@ -22,7 +22,10 @@ export const Register = () => {
       await register(name, email, password);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed. Please try again.');
+      const msg = typeof err.response?.data?.error === 'string' 
+        ? err.response?.data?.error 
+        : err.response?.data?.message || err.message || 'Registration failed. Please try again.';
+      setError(msg);
     } finally {
       setSubmitting(false);
     }

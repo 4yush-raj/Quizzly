@@ -41,7 +41,10 @@ export const Login = ({ portal }) => {
         navigate('/student/dashboard');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
+      const msg = typeof err.response?.data?.error === 'string' 
+        ? err.response?.data?.error 
+        : err.response?.data?.message || err.message || 'Login failed. Please check your credentials.';
+      setError(msg);
     } finally {
       setSubmitting(false);
     }
