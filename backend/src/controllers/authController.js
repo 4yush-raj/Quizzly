@@ -74,6 +74,19 @@ const register = async (req, res) => {
         createdAt: new Date().toISOString()
       };
       store.users.push(newUser);
+    } else {
+      // Sync created Prisma DB user to in-memory store as fallback
+      if (!store.users.some((u) => u.email.toLowerCase() === emailLower)) {
+        store.users.push({
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          password: newUser.password,
+          role: newUser.role,
+          status: newUser.status,
+          createdAt: newUser.createdAt ? newUser.createdAt.toISOString() : new Date().toISOString()
+        });
+      }
     }
 
     const token = generateToken(newUser);

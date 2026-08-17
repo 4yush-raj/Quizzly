@@ -4,12 +4,11 @@ const { store } = require('../store/memoryStore');
 // GET LEADERBOARD
 const getLeaderboard = async (req, res) => {
   try {
-    const { categoryId, sortBy } = req.query; // sortBy: 'average' | 'highest' | 'completed'
-
-    let leaderboard = [];
-
-    // Get all students
+    const { categoryId, sortBy } = req.query;
+    const catId = categoryId ? parseInt(categoryId, 10) : null;
     let students = [];
+    let prismaSucceeded = false;
+
     if (prisma) {
       try {
         const rawStudents = await prisma.user.findMany({
@@ -22,15 +21,15 @@ const getLeaderboard = async (req, res) => {
         });
 
         students = rawStudents.map((u) => {
-          let userAttempts = u.attempts;
-          if (categoryId) {
-            userAttempts = userAttempts.filter((a) => a.quiz.categoryId === parseInt(categoryId, 10));
+          let userAttempts = u.attempts || [];
+          if (catId) {
+            userAttempts = userAttempts.filter((a) => a.quiz && a.quiz.categoryId === catId);
           }
 
           const completed = userAttempts.length;
-          const sumScore = userAttempts.reduce((acc, a) => acc + a.score, 0);
+          const sumScore = userAttempts.reduce((acc, a) => acc + (a.score || 0), 0);
           const avgScore = completed > 0 ? Math.round((sumScore / completed) * 10) / 10 : 0;
-          const highestScore = completed > 0 ? Math.max(...userAttempts.map((a) => a.score)) : 0;
+          const highestScore = completed > 0 ? Math.max(...userAttempts.map((a) => a.score || 0)) : 0;
 
           return {
             studentId: u.id,
@@ -41,27 +40,28 @@ const getLeaderboard = async (req, res) => {
             highestScore: highestScore
           };
         });
+
+        prismaSucceeded = true;
       } catch (e) {
-        // Fallback
+        console.error('Prisma Leaderboard Error:', e);
       }
     }
 
-    if (students.length === 0) {
-      const activeStudents = store.users.filter((u) => u.role === 'STUDENT' && u.status === 'ACTIVE');
+    if (!prismaSucceeded) {
+      const activeStudents = (store.users || []).filter((u) => u.role === 'STUDENT' && u.status === 'ACTIVE');
 
       students = activeStudents.map((u) => {
-        let userAttempts = store.attempts.filter((a) => a.userId === u.id);
+        let userAttempts = (store.attempts || []).filter((a) => a.userId === u.id);
 
-        if (categoryId) {
-          const catId = parseInt(categoryId, 10);
-          const quizIds = store.quizzes.filter((q) => q.categoryId === catId).map((q) => q.id);
+        if (catId) {
+          const quizIds = (store.quizzes || []).filter((q) => q.categoryId === catId).map((q) => q.id);
           userAttempts = userAttempts.filter((a) => quizIds.includes(a.quizId));
         }
 
         const completed = userAttempts.length;
-        const sumScore = userAttempts.reduce((acc, a) => acc + a.score, 0);
+        const sumScore = userAttempts.reduce((acc, a) => acc + (a.score || 0), 0);
         const avgScore = completed > 0 ? Math.round((sumScore / completed) * 10) / 10 : 0;
-        const highestScore = completed > 0 ? Math.max(...userAttempts.map((a) => a.score)) : 0;
+        const highestScore = completed > 0 ? Math.max(...userAttempts.map((a) => a.score || 0)) : 0;
 
         return {
           studentId: u.id,

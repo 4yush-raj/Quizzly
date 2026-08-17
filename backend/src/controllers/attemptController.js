@@ -148,6 +148,27 @@ const submitAttempt = async (req, res) => {
         startedAt: new Date(Date.now() - elapsedSeconds * 1000).toISOString()
       };
       store.attempts.push(createdAttempt);
+    } else {
+      // Sync created attempt to memory store
+      if (!store.attempts.some((a) => a.id === createdAttempt.id)) {
+        store.attempts.push({
+          id: createdAttempt.id,
+          userId: createdAttempt.userId,
+          quizId: createdAttempt.quizId,
+          score: createdAttempt.score,
+          obtainedMarks: createdAttempt.obtainedMarks,
+          totalMarks: createdAttempt.totalMarks,
+          totalQuestions: createdAttempt.totalQuestions,
+          correctAnswers: createdAttempt.correctAnswers,
+          incorrectAnswers: createdAttempt.incorrectAnswers,
+          unanswered: createdAttempt.unanswered,
+          timeTakenSeconds: createdAttempt.timeTakenSeconds,
+          status: createdAttempt.status,
+          answers: createdAttempt.answers,
+          startedAt: createdAttempt.startedAt ? createdAttempt.startedAt.toISOString() : new Date().toISOString(),
+          completedAt: createdAttempt.completedAt ? createdAttempt.completedAt.toISOString() : new Date().toISOString()
+        });
+      }
     }
 
     res.status(201).json({
