@@ -1,43 +1,24 @@
 const prisma = require('../config/db');
-const { store, nextId } = require('../store/memoryStore');
 
 // GET ALL CATEGORIES
 const getCategories = async (req, res) => {
   try {
-    let categories = [];
-
-    if (prisma) {
-      try {
-        categories = await prisma.category.findMany({
-          include: {
-            _count: {
-              select: { quizzes: true }
-            }
-          },
-          orderBy: { name: 'asc' }
-        });
-        return res.json(
-          categories.map((c) => ({
-            id: c.id,
-            name: c.name,
-            description: c.description,
-            createdAt: c.createdAt,
-            quizCount: c._count.quizzes
-          }))
-        );
-      } catch (e) {
-        // Fallback to memory store
-      }
-    }
-
-    // Memory Store Fallback
-    categories = store.categories.map((c) => {
-      const quizCount = store.quizzes.filter((q) => q.categoryId === c.id).length;
-      return {
-        ...c,
-        quizCount
-      };
+    const rawCategories = await prisma.category.findMany({
+      include: {
+        _count: {
+          select: { quizzes: true }
+        }
+      },
+      orderBy: { name: 'asc' }
     });
+
+    const categories = rawCategories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      createdAt: c.createdAt,
+      quizCount: c._count.quizzes
+    }));
 
     res.json(categories);
   } catch (error) {
@@ -56,35 +37,14 @@ const createCategory = async (req, res) => {
     }
 
     const trimmedName = name.trim();
-    let category = null;
 
-    if (prisma) {
-      try {
-        category = await prisma.category.create({
-          data: { name: trimmedName, description: description || '' }
-        });
-        return res.status(201).json({ message: 'Category created successfully!', category });
-      } catch (e) {
-        // Fallback
-      }
-    }
-
-    // Memory store
-    const exists = store.categories.find((c) => c.name.toLowerCase() === trimmedName.toLowerCase());
-    if (exists) {
-      return res.status(400).json({ error: 'Category already exists.' });
-    }
-
-    category = {
-      id: nextId.categories++,
-      name: trimmedName,
-      description: description || '',
-      createdAt: new Date().toISOString()
-    };
-    store.categories.push(category);
+    const category = await prisma.category.create({
+      data: { name: trimmedName, description: description || '' }
+    });
 
     res.status(201).json({ message: 'Category created successfully!', category });
   } catch (error) {
+    console.error('Create Category Error:', error);
     res.status(500).json({ error: 'Failed to create category.' });
   }
 };
@@ -95,30 +55,14 @@ const updateCategory = async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const { name, description } = req.body;
 
-    let updatedCategory = null;
+    const updatedCategory = await prisma.category.update({
+      where: { id },
+      data: { name, description }
+    });
 
-    if (prisma) {
-      try {
-        updatedCategory = await prisma.category.update({
-          where: { id },
-          data: { name, description }
-        });
-        return res.json({ message: 'Category updated successfully!', category: updatedCategory });
-      } catch (e) {
-        // Fallback
-      }
-    }
-
-    const index = store.categories.findIndex((c) => c.id === id);
-    if (index === -1) {
-      return res.status(404).json({ error: 'Category not found.' });
-    }
-
-    if (name) store.categories[index].name = name.trim();
-    if (description !== undefined) store.categories[index].description = description;
-
-    res.json({ message: 'Category updated successfully!', category: store.categories[index] });
+    res.json({ message: 'Category updated successfully!', category: updatedCategory });
   } catch (error) {
+    console.error('Update Category Error:', error);
     res.status(500).json({ error: 'Failed to update category.' });
   }
 };
@@ -127,27 +71,10 @@ const updateCategory = async (req, res) => {
 const deleteCategory = async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-
-    if (prisma) {
-      try {
-        await prisma.category.delete({ where: { id } });
-        return res.json({ message: 'Category deleted successfully!' });
-      } catch (e) {
-        // Fallback
-      }
-    }
-
-    const index = store.categories.findIndex((c) => c.id === id);
-    if (index === -1) {
-      return res.status(404).json({ error: 'Category not found.' });
-    }
-
-    store.categories.splice(index, 1);
-    // Also remove quizzes under category
-    store.quizzes = store.quizzes.filter((q) => q.categoryId !== id);
-
+    await prisma.category.delete({ where: { id } });
     res.json({ message: 'Category deleted successfully!' });
   } catch (error) {
+    console.error('Delete Category Error:', error);
     res.status(500).json({ error: 'Failed to delete category.' });
   }
 };

@@ -1,7 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/db');
-const { store, nextId } = require('../store/memoryStore');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'quizzly_super_secret_jwt_key_2026';
 
@@ -25,69 +24,23 @@ const register = async (req, res) => {
 
     const emailLower = email.toLowerCase().trim();
 
-    // Check Prisma DB first if available
-    let existingUser = null;
-    if (prisma) {
-      try {
-        existingUser = await prisma.user.findUnique({ where: { email: emailLower } });
-      } catch (e) {
-        console.error('Prisma findUnique check error:', e);
-      }
-    }
-
-    if (!existingUser) {
-      existingUser = store.users.find((u) => u.email.toLowerCase() === emailLower);
-    }
-
+    // Check PostgreSQL DB
+    const existingUser = await prisma.user.findUnique({ where: { email: emailLower } });
     if (existingUser) {
       return res.status(400).json({ error: 'An account with this email already exists. Please log in.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    let newUser = null;
-
-    if (prisma) {
-      try {
-        newUser = await prisma.user.create({
-          data: {
-            name,
-            email: emailLower,
-            password: hashedPassword,
-            role: 'STUDENT',
-            status: 'ACTIVE'
-          }
-        });
-      } catch (e) {
-        console.error('Prisma User Create Error:', e);
-      }
-    }
-
-    if (!newUser) {
-      newUser = {
-        id: nextId.users++,
+    const newUser = await prisma.user.create({
+      data: {
         name,
         email: emailLower,
         password: hashedPassword,
         role: 'STUDENT',
-        status: 'ACTIVE',
-        createdAt: new Date().toISOString()
-      };
-      store.users.push(newUser);
-    } else {
-      // Sync created Prisma DB user to in-memory store as fallback
-      if (!store.users.some((u) => u.email.toLowerCase() === emailLower)) {
-        store.users.push({
-          id: newUser.id,
-          name: newUser.name,
-          email: newUser.email,
-          password: newUser.password,
-          role: newUser.role,
-          status: newUser.status,
-          createdAt: newUser.createdAt ? newUser.createdAt.toISOString() : new Date().toISOString()
-        });
+        status: 'ACTIVE'
       }
-    }
+    });
 
     const token = generateToken(newUser);
 
@@ -118,19 +71,9 @@ const login = async (req, res) => {
     }
 
     const emailLower = email.toLowerCase().trim();
-    let user = null;
 
-    if (prisma) {
-      try {
-        user = await prisma.user.findUnique({ where: { email: emailLower } });
-      } catch (e) {
-        console.error('Prisma login error:', e);
-      }
-    }
-
-    if (!user) {
-      user = store.users.find((u) => u.email.toLowerCase() === emailLower);
-    }
+    // Search user in PostgreSQL DB
+    const user = await prisma.user.findUnique({ where: { email: emailLower } });
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
@@ -171,21 +114,11 @@ const getMe = async (req, res) => {
     const userEmail = req.user.email;
     let user = null;
 
-    if (prisma) {
-      try {
-        if (userId) {
-          user = await prisma.user.findUnique({ where: { id: userId } });
-        }
-        if (!user && userEmail) {
-          user = await prisma.user.findUnique({ where: { email: userEmail.toLowerCase() } });
-        }
-      } catch (e) {
-        console.error('Prisma getMe Error:', e);
-      }
+    if (userId) {
+      user = await prisma.user.findUnique({ where: { id: userId } });
     }
-
-    if (!user) {
-      user = store.users.find((u) => u.id === userId || (userEmail && u.email.toLowerCase() === userEmail.toLowerCase()));
+    if (!user && userEmail) {
+      user = await prisma.user.findUnique({ where: { email: userEmail.toLowerCase() } });
     }
 
     if (!user) {
@@ -203,6 +136,7 @@ const getMe = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('GetMe Error:', error);
     res.status(500).json({ error: 'Failed to fetch user details.' });
   }
 };
@@ -218,34 +152,19 @@ const resetPassword = async (req, res) => {
     const emailLower = email.toLowerCase().trim();
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    let updated = false;
-
-    if (prisma) {
-      try {
-        await prisma.user.update({
-          where: { email: emailLower },
-          data: { password: hashedPassword }
-        });
-        updated = true;
-      } catch (e) {
-        console.error('Prisma resetPassword Error:', e);
-      }
-    }
-
-    if (!updated) {
-      const u = store.users.find((user) => user.email.toLowerCase() === emailLower);
-      if (u) {
-        u.password = hashedPassword;
-        updated = true;
-      }
-    }
-
-    if (!updated) {
+    const user = await prisma.user.findUnique({ where: { email: emailLower } });
+    if (!user) {
       return res.status(404).json({ error: 'No user account found with that email.' });
     }
 
+    await prisma.user.update({
+      where: { email: emailLower },
+      data: { password: hashedPassword }
+    });
+
     res.json({ message: 'Password reset successfully! You can now log in.' });
   } catch (error) {
+    console.error('Reset Password Error:', error);
     res.status(500).json({ error: 'Failed to reset password.' });
   }
 };
